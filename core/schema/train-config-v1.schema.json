@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "train-config-v1",
+  "type": "object",
+  "description": "Placeholder schema for trainer configuration. To be completed in Phase 1."
+}

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "model-v1",
+  "type": "object",
+  "description": "Placeholder schema for tokenizer.model.json. To be completed in Phase 1."
+}
