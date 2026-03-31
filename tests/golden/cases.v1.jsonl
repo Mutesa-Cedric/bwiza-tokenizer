@@ -1,0 +1,10 @@
+{"case_id":"empty_001","input":"","normalized":"","pieces":[],"ids":[],"decoded":"","notes":"empty input"}
+{"case_id":"boundary_001","input":"Muraho neza","normalized":"▁Muraho▁neza","pieces":["▁Mur","aho","▁neza"],"ids":[7,8,9],"decoded":"Muraho neza","notes":"basic word boundaries"}
+{"case_id":"punct_001","input":"Muraho.","normalized":"▁Muraho.","pieces":["▁Mur","aho","."],"ids":[7,8,10],"decoded":"Muraho.","notes":"punctuation"}
+{"case_id":"whitespace_001","input":"  Muraho\t\tneza  ","normalized":"▁Muraho▁neza","pieces":["▁Mur","aho","▁neza"],"ids":[7,8,9],"decoded":"Muraho neza","notes":"repeated whitespace"}
+{"case_id":"unicode_001","input":"Café","normalized":"▁Café","pieces":["▁Café"],"ids":[13],"decoded":"Café","notes":"unicode normalization"}
+{"case_id":"digits_001","input":"2026-03-31","normalized":"▁2026-03-31","pieces":["▁2026-03-31"],"ids":[12],"decoded":"2026-03-31","notes":"digits and dates"}
+{"case_id":"mixed_001","input":"Muraho world","normalized":"▁Muraho▁world","pieces":["▁Mur","aho","▁world"],"ids":[7,8,11],"decoded":"Muraho world","notes":"mixed-language text"}
+{"case_id":"long_001","input":"Muraho neza Muraho world 2026-03-31.","normalized":"▁Muraho▁neza▁Muraho▁world▁2026-03-31.","pieces":["▁Mur","aho","▁neza","▁Mur","aho","▁world","▁2026-03-31","."],"ids":[7,8,9,7,8,11,12,10],"decoded":"Muraho neza Muraho world 2026-03-31.","notes":"long text"}
+{"case_id":"unknown_001","input":"Muraho x","normalized":"▁Muraho▁x","pieces":["▁Mur","aho","▁","<unk>"],"ids":[7,8,4,0],"decoded":"Muraho <unk>","notes":"unknown fallback"}
+{"case_id":"tiebreak_001","input":"Muraho","normalized":"▁Muraho","pieces":["▁Mur","aho"],"ids":[7,8],"decoded":"Muraho","notes":"deterministic tie-breaking"}
