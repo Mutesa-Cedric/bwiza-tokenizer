@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 pub enum RuntimeError {
     Io(std::io::Error),
     Json(serde_json::Error),
+    UnknownTokenId(usize),
     Validation(String),
 }
 
@@ -12,6 +13,7 @@ impl Display for RuntimeError {
         match self {
             Self::Io(error) => write!(f, "io error: {error}"),
             Self::Json(error) => write!(f, "json error: {error}"),
+            Self::UnknownTokenId(token_id) => write!(f, "unknown token id {token_id}"),
             Self::Validation(message) => write!(f, "validation error: {message}"),
         }
     }
