@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import TrainerConfig
 from .normalize.pipeline import normalize_text as _normalize_text
+from .reference_runtime.decode import decode_ids as _decode_ids
 from .types import ModelV1, NormalizationConfig, VocabEntry
 
 __all__ = [
@@ -32,4 +33,4 @@ def encode_text(text: str, model: ModelV1) -> list[int]:
 
 
 def decode_ids(ids: list[int], model: ModelV1) -> str:
-    raise NotImplementedError("decode_ids will be implemented in Phase 2.")
+    return _decode_ids(ids, model)
