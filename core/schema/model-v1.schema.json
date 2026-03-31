@@ -1,6 +1,331 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "model-v1",
+  "description": "Schema for tokenizer.model.json artifacts used by bwiza-tokenizer v1.",
   "type": "object",
-  "description": "Placeholder schema for tokenizer.model.json. To be completed in Phase 1."
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "name",
+    "model_type",
+    "vocab_size",
+    "normalization",
+    "special_token_ids",
+    "vocab",
+    "trainer"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "model-v1"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_type": {
+      "type": "string",
+      "const": "unigram"
+    },
+    "vocab_size": {
+      "type": "integer",
+      "minimum": 4
+    },
+    "normalization": {
+      "$ref": "#/$defs/normalizationConfig"
+    },
+    "special_token_ids": {
+      "$ref": "#/$defs/specialTokenIds"
+    },
+    "vocab": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "$ref": "#/$defs/vocabEntry"
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special"
+            ],
+            "properties": {
+              "special": {
+                "const": "unk"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special",
+              "id"
+            ],
+            "properties": {
+              "special": {
+                "const": "unk"
+              },
+              "id": {
+                "const": 0
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special"
+            ],
+            "properties": {
+              "special": {
+                "const": "bos"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special",
+              "id"
+            ],
+            "properties": {
+              "special": {
+                "const": "bos"
+              },
+              "id": {
+                "const": 1
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special"
+            ],
+            "properties": {
+              "special": {
+                "const": "eos"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special",
+              "id"
+            ],
+            "properties": {
+              "special": {
+                "const": "eos"
+              },
+              "id": {
+                "const": 2
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special"
+            ],
+            "properties": {
+              "special": {
+                "const": "pad"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "special",
+              "id"
+            ],
+            "properties": {
+              "special": {
+                "const": "pad"
+              },
+              "id": {
+                "const": 3
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "trainer": {
+      "$ref": "#/$defs/trainerMetadata"
+    }
+  },
+  "$defs": {
+    "normalizationConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unicode_form",
+        "whitespace_policy",
+        "trim",
+        "boundary_marker",
+        "prepend_leading_boundary"
+      ],
+      "properties": {
+        "unicode_form": {
+          "type": "string",
+          "const": "NFC"
+        },
+        "whitespace_policy": {
+          "type": "string",
+          "const": "all_whitespace_to_space_then_collapse"
+        },
+        "trim": {
+          "type": "boolean",
+          "const": true
+        },
+        "boundary_marker": {
+          "type": "string",
+          "const": "▁"
+        },
+        "prepend_leading_boundary": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "specialTokenIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unk",
+        "bos",
+        "eos",
+        "pad"
+      ],
+      "properties": {
+        "unk": {
+          "type": "integer",
+          "const": 0
+        },
+        "bos": {
+          "type": "integer",
+          "const": 1
+        },
+        "eos": {
+          "type": "integer",
+          "const": 2
+        },
+        "pad": {
+          "type": "integer",
+          "const": 3
+        }
+      }
+    },
+    "vocabEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "piece",
+        "score",
+        "special"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "piece": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "number"
+        },
+        "special": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "unk",
+            "bos",
+            "eos",
+            "pad",
+            null
+          ]
+        }
+      }
+    },
+    "trainerMetadata": {
+      "type": "object",
+      "properties": {
+        "target_vocab_size": {
+          "type": "integer",
+          "minimum": 4
+        },
+        "seed_candidate_limit": {
+          "type": "integer",
+          "minimum": 4
+        },
+        "max_piece_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_candidate_freq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "prune_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0.0,
+          "exclusiveMaximum": 1.0
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_score_delta": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "seed_candidate_multiplier": {
+          "type": "number",
+          "exclusiveMinimum": 0.0
+        },
+        "reserved_special_tokens": {
+          "type": "integer",
+          "const": 4
+        }
+      },
+      "additionalProperties": true
+    }
+  }
 }

@@ -1,6 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "golden-case-v1",
+  "description": "Schema for canonical tokenizer parity fixtures.",
   "type": "object",
-  "description": "Placeholder schema for parity fixture cases. To be completed in Phase 1."
+  "additionalProperties": false,
+  "required": [
+    "case_id",
+    "input",
+    "normalized",
+    "pieces",
+    "ids",
+    "decoded"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {
+      "type": "string"
+    },
+    "normalized": {
+      "type": "string"
+    },
+    "pieces": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "ids": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "decoded": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
 }

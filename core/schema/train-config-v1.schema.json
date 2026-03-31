@@ -1,6 +1,62 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "train-config-v1",
+  "description": "Schema for deterministic unigram trainer configuration.",
   "type": "object",
-  "description": "Placeholder schema for trainer configuration. To be completed in Phase 1."
+  "additionalProperties": false,
+  "required": [
+    "model_type",
+    "vocab_size",
+    "seed_candidate_multiplier",
+    "seed_candidate_limit",
+    "max_piece_chars",
+    "min_candidate_freq",
+    "prune_fraction",
+    "max_iterations",
+    "min_score_delta",
+    "reserved_special_tokens"
+  ],
+  "properties": {
+    "model_type": {
+      "type": "string",
+      "const": "unigram"
+    },
+    "vocab_size": {
+      "type": "integer",
+      "minimum": 4
+    },
+    "seed_candidate_multiplier": {
+      "type": "number",
+      "exclusiveMinimum": 0.0
+    },
+    "seed_candidate_limit": {
+      "type": "integer",
+      "minimum": 4
+    },
+    "max_piece_chars": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_candidate_freq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "prune_fraction": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "exclusiveMaximum": 1.0
+    },
+    "max_iterations": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_score_delta": {
+      "type": "number",
+      "minimum": 0.0
+    },
+    "reserved_special_tokens": {
+      "type": "integer",
+      "const": 4
+    }
+  }
 }
