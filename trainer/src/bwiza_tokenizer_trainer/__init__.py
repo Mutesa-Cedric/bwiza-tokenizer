@@ -4,6 +4,7 @@ from .config import TrainerConfig
 from .normalize.pipeline import normalize_text as _normalize_text
 from .reference_runtime.decode import decode_ids as _decode_ids
 from .reference_runtime.encode import encode_to_ids as _encode_to_ids
+from .train.fit import train_from_iterator as _train_from_iterator
 from .types import ModelV1, NormalizationConfig, VocabEntry
 
 __all__ = [
@@ -26,7 +27,7 @@ def normalize_text(
 
 
 def train_from_iterator(docs, config: TrainerConfig):
-    raise NotImplementedError("train_from_iterator will be implemented in Phase 2.")
+    return _train_from_iterator(docs, config)
 
 
 def encode_text(text: str, model: ModelV1) -> list[int]:
