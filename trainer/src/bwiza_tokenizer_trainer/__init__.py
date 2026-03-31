@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .config import TrainerConfig
+from .normalize.pipeline import normalize_text as _normalize_text
 from .types import ModelV1, NormalizationConfig, VocabEntry
 
 __all__ = [
@@ -15,8 +16,11 @@ __all__ = [
 ]
 
 
-def normalize_text(text: str) -> str:
-    raise NotImplementedError("normalize_text will be implemented in Phase 2.")
+def normalize_text(
+    text: str,
+    config: NormalizationConfig | None = None,
+) -> str:
+    return _normalize_text(text, config=config)
 
 
 def train_from_iterator(docs, config: TrainerConfig):
