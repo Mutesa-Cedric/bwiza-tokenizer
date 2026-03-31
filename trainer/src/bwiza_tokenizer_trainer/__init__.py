@@ -3,6 +3,7 @@ from __future__ import annotations
 from .config import TrainerConfig
 from .normalize.pipeline import normalize_text as _normalize_text
 from .reference_runtime.decode import decode_ids as _decode_ids
+from .reference_runtime.encode import encode_to_ids as _encode_to_ids
 from .types import ModelV1, NormalizationConfig, VocabEntry
 
 __all__ = [
@@ -29,7 +30,7 @@ def train_from_iterator(docs, config: TrainerConfig):
 
 
 def encode_text(text: str, model: ModelV1) -> list[int]:
-    raise NotImplementedError("encode_text will be implemented in Phase 2.")
+    return _encode_to_ids(text, model)
 
 
 def decode_ids(ids: list[int], model: ModelV1) -> str:
