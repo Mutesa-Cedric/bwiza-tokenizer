@@ -16,7 +16,7 @@ test:
 	cargo test --manifest-path runtime/Cargo.toml
 
 parity:
-	@echo "Parity command is not implemented yet."
+	PYTHONPATH=trainer/src:cli/src python3 -m bwiza_tokenizer_cli.main parity --model tests/golden/model.v1.json --cases tests/golden/cases.v1.jsonl
 
 bench:
 	@echo "Benchmark command is not implemented yet."
