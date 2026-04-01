@@ -23,6 +23,70 @@ def test_normalize_command_prints_normalized_text(capsys) -> None:
     assert captured.err == ""
 
 
+def test_train_command_writes_artifacts_for_text_input(tmp_path, capsys) -> None:
+    corpus_path = tmp_path / "corpus.txt"
+    corpus_path.write_text("Muraho neza\nMuraho\nNeza\n", encoding="utf-8")
+    output_dir = tmp_path / "artifacts"
+
+    exit_code = main([
+        "train",
+        "--output-dir",
+        str(output_dir),
+        "--name",
+        "cli-text-demo",
+        "--vocab-size",
+        "8",
+        str(corpus_path),
+    ])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["name"] == "cli-text-demo"
+    assert payload["documents"] == 3
+    assert output_dir.joinpath("model.v1.json").exists()
+    assert output_dir.joinpath("vocab.tsv").exists()
+    assert output_dir.joinpath("eval.json").exists()
+
+    model_payload = json.loads(output_dir.joinpath("model.v1.json").read_text(encoding="utf-8"))
+    assert model_payload["name"] == "cli-text-demo"
+    assert model_payload["model_type"] == "unigram"
+    assert captured.err == ""
+
+
+def test_train_command_writes_artifacts_for_jsonl_input(tmp_path, capsys) -> None:
+    corpus_path = tmp_path / "corpus.jsonl"
+    corpus_path.write_text(
+        '{"text":"Muraho neza"}\n{"text":"Muraho"}\n{"text":"Neza"}\n',
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "artifacts"
+
+    exit_code = main([
+        "train",
+        "--output-dir",
+        str(output_dir),
+        "--input-format",
+        "jsonl",
+        "--field",
+        "text",
+        "--name",
+        "cli-jsonl-demo",
+        "--vocab-size",
+        "8",
+        str(corpus_path),
+    ])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["name"] == "cli-jsonl-demo"
+    assert payload["documents"] == 3
+    eval_payload = json.loads(output_dir.joinpath("eval.json").read_text(encoding="utf-8"))
+    assert eval_payload["model_name"] == "cli-jsonl-demo"
+    assert captured.err == ""
+
+
 def test_encode_command_prints_token_ids_as_json(capsys) -> None:
     exit_code = main(["encode", "--model", str(MODEL_PATH), "Muraho neza"])
     captured = capsys.readouterr()
@@ -66,6 +130,7 @@ def test_native_runtime_flag_reports_missing_extension(capsys) -> None:
     assert exit_code == 1
     assert captured.out == ""
     assert "bwiza_tokenizer_runtime" in captured.err
+
 
 def test_parity_command_passes_against_committed_fixtures(capsys) -> None:
     exit_code = main(["parity", "--model", str(MODEL_PATH), "--cases", str(CASES_PATH)])

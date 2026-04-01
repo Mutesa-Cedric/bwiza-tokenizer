@@ -7,7 +7,7 @@ name = "bwiza-tokenizer-cli"
 version = "0.0.0"
 description = "Command-line interface for bwiza-tokenizer"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["bwiza-tokenizer-trainer"]
 
 [project.scripts]
 bwiza-tokenizer = "bwiza_tokenizer_cli.main:main"
