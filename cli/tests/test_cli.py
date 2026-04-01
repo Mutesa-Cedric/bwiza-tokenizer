@@ -87,6 +87,57 @@ def test_train_command_writes_artifacts_for_jsonl_input(tmp_path, capsys) -> Non
     assert captured.err == ""
 
 
+def test_eval_command_reports_metrics_for_text_input(tmp_path, capsys) -> None:
+    corpus_path = tmp_path / "corpus.txt"
+    corpus_path.write_text("Muraho neza\nMuraho\n", encoding="utf-8")
+
+    exit_code = main([
+        "eval",
+        "--model",
+        str(MODEL_PATH),
+        str(corpus_path),
+    ])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["model_name"] == "parity-demo"
+    assert payload["vocab_size"] == 14
+    assert payload["average_tokens_per_document"] > 0
+    assert captured.err == ""
+
+
+def test_eval_command_writes_report_for_jsonl_input(tmp_path, capsys) -> None:
+    corpus_path = tmp_path / "corpus.jsonl"
+    corpus_path.write_text(
+        '{"text":"Muraho neza"}\n{"text":"Muraho world"}\n',
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "report.json"
+
+    exit_code = main([
+        "eval",
+        "--model",
+        str(MODEL_PATH),
+        "--input-format",
+        "jsonl",
+        "--field",
+        "text",
+        "--output",
+        str(output_path),
+        str(corpus_path),
+    ])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    written = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written == payload
+    assert payload["model_name"] == "parity-demo"
+    assert len(payload["sample_segmentations"]) > 0
+    assert captured.err == ""
+
+
 def test_encode_command_prints_token_ids_as_json(capsys) -> None:
     exit_code = main(["encode", "--model", str(MODEL_PATH), "Muraho neza"])
     captured = capsys.readouterr()

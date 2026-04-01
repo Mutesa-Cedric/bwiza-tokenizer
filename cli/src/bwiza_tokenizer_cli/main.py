@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from bwiza_tokenizer_cli.eval import evaluate_tokenizer
 from bwiza_tokenizer_cli.runtime import load_backend
 from bwiza_tokenizer_cli.train import train_tokenizer
 from bwiza_tokenizer_trainer.normalize.pipeline import normalize_text
@@ -36,19 +37,22 @@ def build_parser() -> argparse.ArgumentParser:
         "train",
         help="Train a tokenizer model from text or JSONL corpora.",
     )
+    _add_corpus_arguments(train_parser)
     train_parser.add_argument("--output-dir", required=True, help="Directory to write model artifacts into.")
-    train_parser.add_argument(
-        "--input-format",
-        choices=("text", "jsonl"),
-        default="text",
-        help="Corpus file format.",
-    )
-    train_parser.add_argument("--field", help="JSONL field to read when --input-format=jsonl.")
     train_parser.add_argument("--name", default="bwiza-unigram-v1", help="Model name to write into the artifact.")
     train_parser.add_argument("--vocab-size", type=int, default=16000, help="Target vocabulary size.")
     train_parser.add_argument("--sample-limit", type=int, default=8, help="How many sample segmentations to include in eval output.")
-    train_parser.add_argument("paths", nargs="+", help="One or more corpus files.")
     train_parser.set_defaults(handler=_run_train)
+
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Evaluate a tokenizer model against text or JSONL corpora.",
+    )
+    _add_corpus_arguments(eval_parser)
+    eval_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    eval_parser.add_argument("--output", help="Optional path to write eval.json.")
+    eval_parser.add_argument("--sample-limit", type=int, default=8, help="How many sample segmentations to include in the report.")
+    eval_parser.set_defaults(handler=_run_eval)
 
     encode_parser = subparsers.add_parser(
         "encode",
@@ -105,6 +109,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
 
+def _add_corpus_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--input-format",
+        choices=("text", "jsonl"),
+        default="text",
+        help="Corpus file format.",
+    )
+    parser.add_argument("--field", help="JSONL field to read when --input-format=jsonl.")
+    parser.add_argument("paths", nargs="+", help="One or more corpus files.")
+
+
 def _add_model_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", required=True, help="Path to model.v1.json")
     parser.add_argument(
@@ -131,6 +146,19 @@ def _run_train(args: argparse.Namespace) -> int:
         sample_limit=args.sample_limit,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_eval(args: argparse.Namespace) -> int:
+    report = evaluate_tokenizer(
+        model_path=args.model,
+        paths=list(args.paths),
+        input_format=args.input_format,
+        jsonl_field=args.field,
+        sample_limit=args.sample_limit,
+        output_path=args.output,
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
 
