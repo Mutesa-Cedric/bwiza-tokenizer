@@ -1,4 +1,4 @@
-.PHONY: setup fmt lint test parity bench
+.PHONY: setup fmt lint test parity native-smoke bench
 
 setup:
 	@echo "Install local packages with: python3 -m pip install -e trainer && python3 -m pip install -e cli"
@@ -19,6 +19,9 @@ test:
 
 parity:
 	PYTHONPATH=trainer/src:cli/src python3 -m bwiza_tokenizer_cli.main parity --model tests/golden/model.v1.json --cases tests/golden/cases.v1.jsonl
+
+native-smoke:
+	python3 tests/parity/native_runtime_smoke.py
 
 bench:
 	@echo "Benchmark command is not implemented yet."
