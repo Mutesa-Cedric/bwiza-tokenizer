@@ -59,6 +59,14 @@ def test_decode_pieces_command_prints_text(capsys) -> None:
     assert captured.err == ""
 
 
+def test_native_runtime_flag_reports_missing_extension(capsys) -> None:
+    exit_code = main(["encode", "--model", str(MODEL_PATH), "--runtime", "native", "Muraho neza"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "bwiza_tokenizer_runtime" in captured.err
+
 def test_parity_command_passes_against_committed_fixtures(capsys) -> None:
     exit_code = main(["parity", "--model", str(MODEL_PATH), "--cases", str(CASES_PATH)])
     captured = capsys.readouterr()
@@ -68,6 +76,7 @@ def test_parity_command_passes_against_committed_fixtures(capsys) -> None:
     assert payload == {
         "model": str(MODEL_PATH),
         "cases": str(CASES_PATH),
+        "runtime": "python",
         "total": 10,
         "failed": 0,
         "passed": 10,

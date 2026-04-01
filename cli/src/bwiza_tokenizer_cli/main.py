@@ -7,10 +7,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from bwiza_tokenizer_trainer.model.load import load_model
+from bwiza_tokenizer_cli.runtime import load_backend
 from bwiza_tokenizer_trainer.normalize.pipeline import normalize_text
-from bwiza_tokenizer_trainer.reference_runtime.decode import decode_ids, decode_pieces
-from bwiza_tokenizer_trainer.reference_runtime.encode import encode_to_ids, encode_to_pieces
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         "encode",
         help="Encode raw text into tokenizer ids or pieces.",
     )
-    encode_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    _add_model_arguments(encode_parser)
     encode_parser.add_argument(
         "--pieces",
         action="store_true",
@@ -50,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         "decode",
         help="Decode tokenizer ids back into readable text.",
     )
-    decode_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    _add_model_arguments(decode_parser)
     decode_parser.add_argument("ids", nargs="+", type=int, help="Token ids to decode.")
     decode_parser.set_defaults(handler=_run_decode)
 
@@ -58,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
         "decode-pieces",
         help="Decode tokenizer piece surfaces back into readable text.",
     )
-    decode_pieces_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    _add_model_arguments(decode_pieces_parser)
     decode_pieces_parser.add_argument("pieces", nargs="+", help="Piece surfaces to decode.")
     decode_pieces_parser.set_defaults(handler=_run_decode_pieces)
 
@@ -66,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         "parity",
         help="Check model behavior against committed parity fixtures.",
     )
-    parity_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    _add_model_arguments(parity_parser)
     parity_parser.add_argument(
         "--cases",
         required=True,
@@ -83,9 +81,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         return int(args.handler(args))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RuntimeError, ModuleNotFoundError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+
+def _add_model_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    parser.add_argument(
+        "--runtime",
+        choices=("auto", "python", "native"),
+        default="auto",
+        help="Tokenizer runtime to use for model-backed commands.",
+    )
 
 
 def _run_normalize(args: argparse.Namespace) -> int:
@@ -94,31 +102,31 @@ def _run_normalize(args: argparse.Namespace) -> int:
 
 
 def _run_encode(args: argparse.Namespace) -> int:
-    model = load_model(args.model)
+    backend = load_backend(args.model, runtime=args.runtime)
     payload: list[int] | list[str]
     if args.pieces:
-        payload = encode_to_pieces(args.text, model)
+        payload = backend.encode_pieces(args.text)
     else:
-        payload = encode_to_ids(args.text, model)
+        payload = backend.encode_ids(args.text)
 
     print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
 def _run_decode(args: argparse.Namespace) -> int:
-    model = load_model(args.model)
-    print(decode_ids(args.ids, model))
+    backend = load_backend(args.model, runtime=args.runtime)
+    print(backend.decode_ids(args.ids))
     return 0
 
 
 def _run_decode_pieces(args: argparse.Namespace) -> int:
-    model = load_model(args.model)
-    print(decode_pieces(args.pieces, model))
+    backend = load_backend(args.model, runtime=args.runtime)
+    print(backend.decode_pieces(args.pieces))
     return 0
 
 
 def _run_parity(args: argparse.Namespace) -> int:
-    model = load_model(args.model)
+    backend = load_backend(args.model, runtime=args.runtime)
     cases_path = Path(args.cases)
 
     total = 0
@@ -132,10 +140,10 @@ def _run_parity(args: argparse.Namespace) -> int:
             total += 1
             case = json.loads(line)
             input_text = case["input"]
-            normalized = normalize_text(input_text, config=model.normalization)
-            pieces = encode_to_pieces(input_text, model)
-            ids = encode_to_ids(input_text, model)
-            decoded_text = decode_ids(ids, model)
+            normalized = backend.normalize(input_text)
+            pieces = backend.encode_pieces(input_text)
+            ids = backend.encode_ids(input_text)
+            decoded_text = backend.decode_ids(ids)
 
             failed_fields: list[str] = []
             if normalized != case["normalized"]:
@@ -159,6 +167,7 @@ def _run_parity(args: argparse.Namespace) -> int:
     summary = {
         "model": str(Path(args.model)),
         "cases": str(cases_path),
+        "runtime": backend.runtime_name,
         "total": total,
         "failed": len(mismatches),
         "passed": total - len(mismatches),

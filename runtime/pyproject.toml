@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bwiza-tokenizer-runtime"
+version = "0.0.0"
+description = "Rust runtime for bwiza-tokenizer"
+requires-python = ">=3.12"
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Rust",
+]
+
+[tool.maturin]
+features = ["python"]
+module-name = "bwiza_tokenizer_runtime"

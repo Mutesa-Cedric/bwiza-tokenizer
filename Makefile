@@ -2,6 +2,7 @@
 
 setup:
 	@echo "Install local packages with: python3 -m pip install -e trainer && python3 -m pip install -e cli"
+	@echo "Optional native runtime: python3 -m pip install -e runtime"
 	@echo "Check the Rust crate with: cargo check --manifest-path runtime/Cargo.toml"
 
 fmt:
