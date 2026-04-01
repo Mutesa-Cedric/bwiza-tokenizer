@@ -9,6 +9,9 @@ description = "Python reference trainer for bwiza-tokenizer"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+sentencepiece = ["sentencepiece>=0.2,<0.3"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

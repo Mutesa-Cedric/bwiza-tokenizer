@@ -40,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_corpus_arguments(train_parser)
     train_parser.add_argument("--output-dir", required=True, help="Directory to write model artifacts into.")
     train_parser.add_argument("--name", default="bwiza-unigram-v1", help="Model name to write into the artifact.")
+    train_parser.add_argument(
+        "--backend",
+        choices=("custom", "sentencepiece"),
+        default="custom",
+        help="Training backend to use.",
+    )
     train_parser.add_argument("--vocab-size", type=int, default=16000, help="Target vocabulary size.")
     train_parser.add_argument("--sample-limit", type=int, default=8, help="How many sample segmentations to include in eval output.")
     train_parser.set_defaults(handler=_run_train)
@@ -49,7 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate a tokenizer model against text or JSONL corpora.",
     )
     _add_corpus_arguments(eval_parser)
-    eval_parser.add_argument("--model", required=True, help="Path to model.v1.json")
+    eval_parser.add_argument("--model", required=True, help="Path to model.v1.json or SentencePiece .model")
+    eval_parser.add_argument(
+        "--backend",
+        choices=("auto", "custom", "sentencepiece"),
+        default="auto",
+        help="Evaluation backend to use.",
+    )
     eval_parser.add_argument("--output", help="Optional path to write eval.json.")
     eval_parser.add_argument("--sample-limit", type=int, default=8, help="How many sample segmentations to include in the report.")
     eval_parser.set_defaults(handler=_run_eval)
@@ -142,6 +154,7 @@ def _run_train(args: argparse.Namespace) -> int:
         output_dir=args.output_dir,
         vocab_size=args.vocab_size,
         model_name=args.name,
+        backend=args.backend,
         jsonl_field=args.field,
         sample_limit=args.sample_limit,
     )
@@ -154,6 +167,7 @@ def _run_eval(args: argparse.Namespace) -> int:
         model_path=args.model,
         paths=list(args.paths),
         input_format=args.input_format,
+        backend=args.backend,
         jsonl_field=args.field,
         sample_limit=args.sample_limit,
         output_path=args.output,
