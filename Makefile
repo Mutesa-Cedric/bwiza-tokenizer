@@ -14,6 +14,7 @@ test:
 	cd trainer && python3 -m pytest
 	cd cli && python3 -m pytest
 	cargo test --manifest-path runtime/Cargo.toml
+	cargo test --manifest-path runtime/Cargo.toml --features python
 
 parity:
 	PYTHONPATH=trainer/src:cli/src python3 -m bwiza_tokenizer_cli.main parity --model tests/golden/model.v1.json --cases tests/golden/cases.v1.jsonl
