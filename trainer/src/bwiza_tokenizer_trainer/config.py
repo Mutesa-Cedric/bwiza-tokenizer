@@ -17,4 +17,5 @@ class TrainerConfig:
     prune_fraction: float = 0.15
     max_iterations: int = 20
     min_score_delta: float = 1e-4
+    byte_fallback: bool = True
     reserved_special_tokens: Literal[4] = 4

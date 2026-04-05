@@ -19,6 +19,7 @@ def default_trainer_metadata() -> dict[str, Any]:
         "prune_fraction": 0.15,
         "max_iterations": 20,
         "min_score_delta": 1e-4,
+        "byte_fallback": True,
         "seed_candidate_multiplier": 8,
         "reserved_special_tokens": 4,
     }

@@ -11,6 +11,7 @@ def training_config() -> TrainerConfig:
         prune_fraction=0.5,
         max_iterations=4,
         min_score_delta=1e-6,
+        byte_fallback=False,
     )
 
 

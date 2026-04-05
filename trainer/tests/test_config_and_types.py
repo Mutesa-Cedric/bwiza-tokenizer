@@ -14,6 +14,7 @@ def test_trainer_config_defaults_match_v1_contract() -> None:
     assert config.prune_fraction == 0.15
     assert config.max_iterations == 20
     assert config.min_score_delta == 1e-4
+    assert config.byte_fallback is True
     assert config.reserved_special_tokens == 4
 
 
@@ -30,6 +31,7 @@ def test_model_defaults_match_v1_contract() -> None:
     assert model.trainer["min_candidate_freq"] == 2
     assert model.trainer["prune_fraction"] == 0.15
     assert model.trainer["max_iterations"] == 20
+    assert model.trainer["byte_fallback"] is True
 
 
 def test_normalization_and_vocab_entry_shapes_are_explicit() -> None:

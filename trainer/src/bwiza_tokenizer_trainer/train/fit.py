@@ -4,6 +4,7 @@ from dataclasses import asdict
 from math import log
 from typing import Iterable
 
+from ..byte_fallback import byte_fallback_entries
 from ..config import TrainerConfig
 from ..model.validate import validate_model
 from ..normalize.pipeline import normalize_text
@@ -32,14 +33,26 @@ def _special_entries() -> list[VocabEntry]:
     ]
 
 
-def _score_seed_candidates(candidates: list[SeedCandidate]) -> list[VocabEntry]:
+def _bootstrap_entries(config: TrainerConfig) -> list[VocabEntry]:
+    entries = _special_entries()
+    if config.byte_fallback:
+        entries.extend(byte_fallback_entries(start_id=len(entries)))
+
+    return entries
+
+
+def _score_seed_candidates(
+    candidates: list[SeedCandidate],
+    *,
+    start_id: int,
+) -> list[VocabEntry]:
     total_count = sum(candidate.count for candidate in candidates)
 
     if total_count == 0:
         return []
 
     entries: list[VocabEntry] = []
-    next_id = len(SPECIAL_TOKEN_ROWS)
+    next_id = start_id
 
     for candidate in candidates:
         entries.append(
@@ -167,12 +180,16 @@ def train_from_iterator(
         if normalized
     ]
 
+    bootstrap_vocab = _bootstrap_entries(config)
     seed_candidates = enumerate_seed_candidates_native(normalized_docs, config)
     if seed_candidates is None:
         seed_candidates = enumerate_seed_candidates(normalized_docs, config)
-    vocab = _special_entries() + _score_seed_candidates(seed_candidates)
+    vocab = bootstrap_vocab + _score_seed_candidates(
+        seed_candidates,
+        start_id=len(bootstrap_vocab),
+    )
 
-    if len(vocab) == len(SPECIAL_TOKEN_ROWS):
+    if len(vocab) == len(bootstrap_vocab):
         model = ModelV1(
             name="bwiza-unigram-v1",
             vocab_size=len(vocab),
@@ -207,7 +224,7 @@ def train_from_iterator(
             rescored_vocab,
             prune_fraction=config.prune_fraction,
             boundary_marker=normalization.boundary_marker,
-            minimum_vocab_size=max(config.vocab_size, len(SPECIAL_TOKEN_ROWS)),
+            minimum_vocab_size=max(config.vocab_size, len(bootstrap_vocab)),
         )
 
         score_delta = _max_score_delta(current_vocab, rescored_vocab)

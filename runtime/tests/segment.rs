@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use bwiza_tokenizer_runtime::byte_fallback::byte_fallback_piece;
 use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 use bwiza_tokenizer_runtime::segment::segment_normalized;
 use bwiza_tokenizer_runtime::trie::PieceTrie;
@@ -60,6 +61,60 @@ fn parity_model() -> ModelV1 {
 }"#,
     )
     .expect("parity demo model should load")
+}
+
+fn byte_fallback_model() -> ModelV1 {
+    let mut vocab = vec![
+        serde_json::json!({"id": 0, "piece": "<unk>", "score": -10.0, "special": "unk"}),
+        serde_json::json!({"id": 1, "piece": "<s>", "score": 0.0, "special": "bos"}),
+        serde_json::json!({"id": 2, "piece": "</s>", "score": 0.0, "special": "eos"}),
+        serde_json::json!({"id": 3, "piece": "<pad>", "score": 0.0, "special": "pad"}),
+        serde_json::json!({"id": 4, "piece": "▁a", "score": -1.0, "special": serde_json::Value::Null}),
+        serde_json::json!({"id": 5, "piece": "b", "score": -1.0, "special": serde_json::Value::Null}),
+    ];
+    vocab.extend((0u8..=255).map(|byte| {
+        serde_json::json!({
+            "id": 6 + byte as usize,
+            "piece": byte_fallback_piece(byte),
+            "score": -100.0,
+            "special": serde_json::Value::Null
+        })
+    }));
+
+    load_model_str(
+        serde_json::json!({
+            "version": "model-v1",
+            "name": "byte-fallback-demo",
+            "model_type": "unigram",
+            "vocab_size": vocab.len(),
+            "normalization": {
+                "unicode_form": "NFC",
+                "whitespace_policy": "all_whitespace_to_space_then_collapse",
+                "trim": true,
+                "boundary_marker": "▁",
+                "prepend_leading_boundary": true
+            },
+            "special_token_ids": {
+                "unk": 0,
+                "bos": 1,
+                "eos": 2,
+                "pad": 3
+            },
+            "vocab": vocab,
+            "trainer": {
+                "target_vocab_size": 262,
+                "seed_candidate_limit": 64,
+                "max_piece_chars": 16,
+                "min_candidate_freq": 1,
+                "prune_fraction": 0.15,
+                "max_iterations": 6,
+                "byte_fallback": true
+            }
+        })
+        .to_string()
+        .as_str(),
+    )
+    .expect("byte fallback model should load")
 }
 
 #[test]
@@ -134,4 +189,23 @@ fn matches_committed_fixture_piece_and_id_outputs() {
         assert_eq!(result.pieces, case.pieces);
         assert_eq!(result.ids, case.ids);
     }
+}
+
+#[test]
+fn uses_byte_fallback_for_unseen_characters() {
+    let model = byte_fallback_model();
+    let trie = PieceTrie::from_model(&model);
+    let result = segment_normalized("▁ab😅", &model, &trie).expect("segmentation should work");
+
+    assert_eq!(result.ids[..2], [4, 5]);
+    assert_eq!(result.pieces[..2], ["▁a".to_string(), "b".to_string()]);
+    assert_eq!(
+        result.pieces[2..],
+        vec![
+            byte_fallback_piece(0xF0),
+            byte_fallback_piece(0x9F),
+            byte_fallback_piece(0x98),
+            byte_fallback_piece(0x85),
+        ]
+    );
 }

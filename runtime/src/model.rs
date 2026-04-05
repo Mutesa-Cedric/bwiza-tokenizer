@@ -5,6 +5,7 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::byte_fallback::{BYTE_FALLBACK_COUNT, byte_fallback_piece, parse_byte_fallback_piece};
 use crate::errors::RuntimeError;
 
 const MODEL_VERSION: &str = "model-v1";
@@ -134,6 +135,37 @@ pub fn validate_model(model: &ModelV1) -> Result<(), RuntimeError> {
         return Err(RuntimeError::Validation(
             "vocab pieces must be unique".to_string(),
         ));
+    }
+
+    let byte_piece_values = model
+        .vocab
+        .iter()
+        .filter_map(|entry| {
+            parse_byte_fallback_piece(entry.piece.as_str()).map(|value| value as usize)
+        })
+        .collect::<BTreeSet<_>>();
+    if !byte_piece_values.is_empty() {
+        let expected_values = (0..BYTE_FALLBACK_COUNT).collect::<BTreeSet<_>>();
+        if byte_piece_values != expected_values {
+            return Err(RuntimeError::Validation(
+                "byte fallback pieces must include the full 0x00-0xFF set when enabled".to_string(),
+            ));
+        }
+
+        let expected_pieces = (0..BYTE_FALLBACK_COUNT)
+            .map(|value| byte_fallback_piece(value as u8))
+            .collect::<BTreeSet<_>>();
+        let actual_pieces = model
+            .vocab
+            .iter()
+            .map(|entry| entry.piece.clone())
+            .filter(|piece| expected_pieces.contains(piece))
+            .collect::<BTreeSet<_>>();
+        if actual_pieces != expected_pieces {
+            return Err(RuntimeError::Validation(
+                "byte fallback pieces must be unique and complete when enabled".to_string(),
+            ));
+        }
     }
 
     for entry in &model.vocab {

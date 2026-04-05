@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from ..byte_fallback import parse_byte_fallback_piece
 from ..types import ModelV1, NormalizationConfig
 
 
@@ -17,7 +18,28 @@ def decode_pieces(
         else NormalizationConfig().boundary_marker
     )
 
-    decoded = "".join(pieces).replace(boundary_marker, " ")
+    decoded_parts: list[str] = []
+    pending_bytes = bytearray()
+
+    def flush_pending_bytes() -> None:
+        if not pending_bytes:
+            return
+
+        decoded_parts.append(pending_bytes.decode("utf-8", errors="replace"))
+        pending_bytes.clear()
+
+    for piece in pieces:
+        byte_value = parse_byte_fallback_piece(piece)
+        if byte_value is not None:
+            pending_bytes.append(byte_value)
+            continue
+
+        flush_pending_bytes()
+        decoded_parts.append(piece)
+
+    flush_pending_bytes()
+
+    decoded = "".join(decoded_parts).replace(boundary_marker, " ")
     if decoded.startswith(" "):
         return decoded[1:]
 

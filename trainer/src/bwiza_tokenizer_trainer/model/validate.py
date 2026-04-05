@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..byte_fallback import BYTE_FALLBACK_COUNT, byte_fallback_piece, parse_byte_fallback_piece
 from ..types import ModelV1, NormalizationConfig
 from .schema import ALLOWED_SPECIAL_NAMES, MODEL_TYPE, MODEL_VERSION, REQUIRED_SPECIAL_TOKEN_IDS
 
@@ -40,6 +41,24 @@ def validate_model(model: ModelV1) -> None:
     pieces = [entry.piece for entry in model.vocab]
     if len(set(pieces)) != len(pieces):
         raise ModelValidationError("vocab pieces must be unique")
+
+    byte_piece_values = {
+        parse_byte_fallback_piece(entry.piece)
+        for entry in model.vocab
+        if parse_byte_fallback_piece(entry.piece) is not None
+    }
+    if byte_piece_values:
+        expected_values = set(range(BYTE_FALLBACK_COUNT))
+        if byte_piece_values != expected_values:
+            raise ModelValidationError(
+                "byte fallback pieces must include the full 0x00-0xFF set when enabled"
+            )
+
+        expected_pieces = {byte_fallback_piece(byte_value) for byte_value in expected_values}
+        if {entry.piece for entry in model.vocab if entry.piece in expected_pieces} != expected_pieces:
+            raise ModelValidationError(
+                "byte fallback pieces must be unique and complete when enabled"
+            )
 
     for entry in model.vocab:
         if entry.special is not None and entry.special not in ALLOWED_SPECIAL_NAMES:

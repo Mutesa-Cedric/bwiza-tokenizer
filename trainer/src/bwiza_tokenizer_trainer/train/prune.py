@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from ..byte_fallback import is_byte_fallback_piece
 from ..types import VocabEntry
 
 
@@ -13,6 +14,9 @@ def is_protected_piece(
         return True
 
     if len(entry.piece) == 1:
+        return True
+
+    if is_byte_fallback_piece(entry.piece):
         return True
 
     return entry.piece == boundary_marker

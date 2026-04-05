@@ -1,3 +1,4 @@
+pub mod byte_fallback;
 pub mod decode;
 pub mod encode;
 pub mod errors;

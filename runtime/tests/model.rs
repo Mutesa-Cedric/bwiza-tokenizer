@@ -1,3 +1,4 @@
+use bwiza_tokenizer_runtime::byte_fallback::byte_fallback_piece;
 use bwiza_tokenizer_runtime::errors::RuntimeError;
 use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 
@@ -106,4 +107,25 @@ fn rejects_wrong_special_token_mapping() {
     let message = expect_validation_error(&valid_model_json().replace("\"unk\": 0", "\"unk\": 9"));
 
     assert_eq!(message, "special_token_ids must match the fixed v1 mapping");
+}
+
+#[test]
+fn rejects_incomplete_byte_fallback_set() {
+    let message = expect_validation_error(
+        &valid_model_json()
+            .replace("\"vocab_size\": 8", "\"vocab_size\": 9")
+            .replace(
+                "  ],\n  \"trainer\": {",
+                format!(
+                    "    ,{{\"id\": 8, \"piece\": \"{}\", \"score\": -100.0, \"special\": null}}\n  ],\n  \"trainer\": {{",
+                    byte_fallback_piece(0)
+                )
+                .as_str(),
+            ),
+    );
+
+    assert_eq!(
+        message,
+        "byte fallback pieces must include the full 0x00-0xFF set when enabled"
+    );
 }

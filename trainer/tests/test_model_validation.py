@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from bwiza_tokenizer_trainer.byte_fallback import byte_fallback_piece
 from bwiza_tokenizer_trainer.model.load import load_model, load_model_dict
 from bwiza_tokenizer_trainer.model.validate import ModelValidationError
 
@@ -137,4 +138,15 @@ def test_load_model_rejects_wrong_normalization_contract() -> None:
     normalization["boundary_marker"] = "_"
 
     with pytest.raises(ModelValidationError, match="normalization config does not match normalization-v1"):
+        load_model_dict(model_data)
+
+
+def test_load_model_rejects_incomplete_byte_fallback_set() -> None:
+    model_data = valid_model_dict()
+    vocab = model_data["vocab"]
+    assert isinstance(vocab, list)
+    vocab.append({"id": 8, "piece": byte_fallback_piece(0), "score": -100.0, "special": None})
+    model_data["vocab_size"] = 9
+
+    with pytest.raises(ModelValidationError, match="byte fallback pieces must include the full 0x00-0xFF set"):
         load_model_dict(model_data)

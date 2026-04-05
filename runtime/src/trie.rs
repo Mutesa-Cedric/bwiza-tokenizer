@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::byte_fallback::{BYTE_FALLBACK_COUNT, parse_byte_fallback_piece};
 use crate::model::ModelV1;
 
 #[derive(Debug, Default)]
@@ -11,16 +12,26 @@ struct TrieNode {
 #[derive(Debug, Default)]
 pub struct PieceTrie {
     nodes: Vec<TrieNode>,
+    byte_fallback_ids: Option<[usize; BYTE_FALLBACK_COUNT]>,
 }
 
 impl PieceTrie {
     pub fn from_model(model: &ModelV1) -> Self {
         let mut trie = Self {
             nodes: vec![TrieNode::default()],
+            byte_fallback_ids: None,
         };
+        let mut byte_fallback_ids = [0usize; BYTE_FALLBACK_COUNT];
+        let mut has_byte_fallback = false;
 
         for entry in &model.vocab {
             if entry.special.is_some() {
+                continue;
+            }
+
+            if let Some(byte_value) = parse_byte_fallback_piece(entry.piece.as_str()) {
+                byte_fallback_ids[byte_value as usize] = entry.id;
+                has_byte_fallback = true;
                 continue;
             }
 
@@ -29,6 +40,10 @@ impl PieceTrie {
 
         for node in &mut trie.nodes {
             node.terminal_ids.sort_unstable();
+        }
+
+        if has_byte_fallback {
+            trie.byte_fallback_ids = Some(byte_fallback_ids);
         }
 
         trie
@@ -75,5 +90,9 @@ impl PieceTrie {
         }
 
         matches
+    }
+
+    pub fn byte_fallback_ids(&self) -> Option<&[usize; BYTE_FALLBACK_COUNT]> {
+        self.byte_fallback_ids.as_ref()
     }
 }

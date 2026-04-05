@@ -1,8 +1,9 @@
+use crate::byte_fallback::decode_byte_fallback_pieces;
 use crate::errors::RuntimeError;
 use crate::model::ModelV1;
 
 pub fn decode_pieces(pieces: &[&str], boundary_marker: &str) -> String {
-    let merged = pieces.join("").replace(boundary_marker, " ");
+    let merged = decode_byte_fallback_pieces(pieces).replace(boundary_marker, " ");
     if let Some(stripped) = merged.strip_prefix(' ') {
         return stripped.to_string();
     }
