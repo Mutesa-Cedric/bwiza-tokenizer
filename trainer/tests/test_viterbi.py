@@ -1,5 +1,6 @@
 from bwiza_tokenizer_trainer.model.load import load_model_dict
 from bwiza_tokenizer_trainer.train import segment_normalized
+from bwiza_tokenizer_trainer.train.viterbi import iter_segment_ids
 
 
 def tie_break_model():
@@ -107,6 +108,12 @@ def test_segment_normalized_is_deterministic() -> None:
     second = segment_normalized("▁Muraho", model)
 
     assert first == second
+
+
+def test_iter_segment_ids_matches_segment_normalized_ids() -> None:
+    model = unknown_model()
+
+    assert list(iter_segment_ids("▁abx", model)) == list(segment_normalized("▁abx", model).ids)
 
 
 def test_segment_normalized_rejects_non_string_input() -> None:

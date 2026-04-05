@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use bwiza_tokenizer_runtime::model::{load_model_str, ModelV1};
+use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 use bwiza_tokenizer_runtime::segment::segment_normalized;
 use bwiza_tokenizer_runtime::trie::PieceTrie;
 use serde::Deserialize;
@@ -103,9 +103,21 @@ fn segmentation_is_deterministic() {
 }
 
 #[test]
+fn handles_long_unknown_runs_without_recursion() {
+    let model = parity_model();
+    let trie = PieceTrie::from_model(&model);
+    let text = format!("▁{}", "x".repeat(5000));
+
+    let result =
+        segment_normalized(text.as_str(), &model, &trie).expect("segmentation should work");
+
+    assert_eq!(result.ids.len(), 5001);
+    assert_eq!(&result.ids[..4], &[4, 0, 0, 0]);
+}
+
+#[test]
 fn matches_committed_fixture_piece_and_id_outputs() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/golden/cases.v1.jsonl");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/cases.v1.jsonl");
     let raw = fs::read_to_string(path).expect("fixture file should exist");
     let model = parity_model();
     let trie = PieceTrie::from_model(&model);
@@ -116,8 +128,8 @@ fn matches_committed_fixture_piece_and_id_outputs() {
         }
 
         let case: FixtureCase = serde_json::from_str(line).expect("fixture line should parse");
-        let result =
-            segment_normalized(case.normalized.as_str(), &model, &trie).expect("fixture should segment");
+        let result = segment_normalized(case.normalized.as_str(), &model, &trie)
+            .expect("fixture should segment");
 
         assert_eq!(result.pieces, case.pieces);
         assert_eq!(result.ids, case.ids);

@@ -49,21 +49,21 @@ class PieceTrie:
 
         self.nodes[node_index].terminal_entries.append(entry)
 
-    def candidate_entries_at(self, text: str, offset: int) -> list[VocabEntry]:
+    def iter_candidate_entries_at(self, text: str, offset: int):
         if offset < 0 or offset >= len(text):
-            return []
+            return
 
         node_index = 0
-        matches: list[VocabEntry] = []
 
-        for char in text[offset:]:
+        for char_index in range(offset, len(text)):
+            char = text[char_index]
             next_index = self.nodes[node_index].children.get(char)
             if next_index is None:
                 break
             node_index = next_index
-            matches.extend(self.nodes[node_index].terminal_entries)
-
-        return matches
+            terminal_entries = self.nodes[node_index].terminal_entries
+            if terminal_entries:
+                yield from terminal_entries
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,16 +87,6 @@ def build_model_index(model: ModelV1) -> ModelIndex:
         trie=PieceTrie.from_model(model),
         unknown_entry=_unknown_entry(model),
     )
-
-
-def _match_candidates(
-    normalized: str,
-    offset: int,
-    model_index: ModelIndex,
-) -> list[VocabEntry]:
-    return model_index.trie.candidate_entries_at(normalized, offset)
-
-
 def _path_is_better(
     *,
     left_entry: VocabEntry,
@@ -143,16 +133,16 @@ def _path_is_better(
         current_right_next = best_next_offsets[current_right_next]
 
 
-def segment_normalized(
+def _segment_state(
     normalized: str,
     model: ModelV1,
     model_index: ModelIndex | None = None,
-) -> SegmentationResult:
+) -> tuple[float, list[VocabEntry | None], list[int]]:
     if not isinstance(normalized, str):
         raise TypeError("segment_normalized expects a normalized string")
 
     if not normalized:
-        return SegmentationResult(score=0.0, ids=(), pieces=())
+        return 0.0, [], []
 
     resolved_index = model_index or build_model_index(model)
     unknown = resolved_index.unknown_entry
@@ -168,57 +158,91 @@ def segment_normalized(
         best_next_offset = text_length
         best_score = float("-inf")
         best_token_count = 0
-        candidates = _match_candidates(normalized, offset, resolved_index)
+        saw_candidate = False
 
-        if not candidates:
+        for entry in resolved_index.trie.iter_candidate_entries_at(normalized, offset):
+            saw_candidate = True
+            next_offset = offset + len(entry.piece)
+            candidate_score = entry.score + best_scores[next_offset]
+            candidate_token_count = 1 + best_token_counts[next_offset]
+            if _path_is_better(
+                left_entry=entry,
+                left_next=next_offset,
+                left_score=candidate_score,
+                left_token_count=candidate_token_count,
+                right_entry=best_entry,
+                right_next=best_next_offset,
+                right_score=best_score,
+                right_token_count=best_token_count,
+                best_entries=best_entries,
+                best_next_offsets=best_next_offsets,
+            ):
+                best_entry = entry
+                best_next_offset = next_offset
+                best_score = candidate_score
+                best_token_count = candidate_token_count
+
+        if not saw_candidate:
             next_offset = offset + 1
             best_entry = unknown
             best_next_offset = next_offset
             best_score = unknown.score + best_scores[next_offset]
             best_token_count = 1 + best_token_counts[next_offset]
-        else:
-            for entry in candidates:
-                next_offset = offset + len(entry.piece)
-                candidate_score = entry.score + best_scores[next_offset]
-                candidate_token_count = 1 + best_token_counts[next_offset]
-                if _path_is_better(
-                    left_entry=entry,
-                    left_next=next_offset,
-                    left_score=candidate_score,
-                    left_token_count=candidate_token_count,
-                    right_entry=best_entry,
-                    right_next=best_next_offset,
-                    right_score=best_score,
-                    right_token_count=best_token_count,
-                    best_entries=best_entries,
-                    best_next_offsets=best_next_offsets,
-                ):
-                    best_entry = entry
-                    best_next_offset = next_offset
-                    best_score = candidate_score
-                    best_token_count = candidate_token_count
 
         best_entries[offset] = best_entry
         best_next_offsets[offset] = best_next_offset
         best_scores[offset] = best_score
         best_token_counts[offset] = best_token_count
 
-    pieces: list[str] = []
-    ids: list[int] = []
+    return best_scores[0], best_entries, best_next_offsets
+
+
+def _iter_best_path_entries(
+    normalized: str,
+    best_entries: list[VocabEntry | None],
+    best_next_offsets: list[int],
+):
+    text_length = len(normalized)
     offset = 0
+
     while offset < text_length:
         entry = best_entries[offset]
         if entry is None:
             break
-        pieces.append(entry.piece)
-        ids.append(entry.id)
+        yield entry
         next_offset = best_next_offsets[offset]
         if next_offset <= offset:
             raise ValueError("segmentation did not advance; model index is invalid")
         offset = next_offset
 
+
+def iter_segment_ids(
+    normalized: str,
+    model: ModelV1,
+    model_index: ModelIndex | None = None,
+):
+    _, best_entries, best_next_offsets = _segment_state(normalized, model, model_index)
+
+    for entry in _iter_best_path_entries(normalized, best_entries, best_next_offsets):
+        yield entry.id
+
+
+def segment_normalized(
+    normalized: str,
+    model: ModelV1,
+    model_index: ModelIndex | None = None,
+) -> SegmentationResult:
+    score, best_entries, best_next_offsets = _segment_state(normalized, model, model_index)
+
+    pieces: list[str] = []
+    ids: list[int] = []
+
+    for entry in _iter_best_path_entries(normalized, best_entries, best_next_offsets):
+        pieces.append(entry.piece)
+        ids.append(entry.id)
+
     return SegmentationResult(
-        score=best_scores[0],
+        score=score,
         ids=tuple(ids),
         pieces=tuple(pieces),
     )

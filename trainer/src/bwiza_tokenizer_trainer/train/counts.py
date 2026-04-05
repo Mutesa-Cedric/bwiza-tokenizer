@@ -6,11 +6,14 @@ from collections.abc import Iterable
 from .viterbi import SegmentationResult
 
 
-def count_piece_usage(segmentations: Iterable[SegmentationResult]) -> dict[int, int]:
+def count_piece_usage(
+    segmented_ids: Iterable[SegmentationResult | Iterable[int]],
+) -> dict[int, int]:
     counts: Counter[int] = Counter()
 
-    for segmentation in segmentations:
-        for token_id in segmentation.ids:
+    for segmented in segmented_ids:
+        token_ids = segmented.ids if isinstance(segmented, SegmentationResult) else segmented
+        for token_id in token_ids:
             counts[token_id] += 1
 
     return dict(counts)

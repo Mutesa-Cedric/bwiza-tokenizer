@@ -30,6 +30,7 @@ def test_train_from_iterator_produces_valid_model() -> None:
     validate_model(model)
     assert model.vocab_size == len(model.vocab)
     assert model.special_token_ids == {"unk": 0, "bos": 1, "eos": 2, "pad": 3}
+    assert model.vocab[model.special_token_ids["unk"]].score == -10.0
 
 
 def test_train_from_iterator_is_deterministic() -> None:
@@ -58,3 +59,4 @@ def test_train_from_iterator_handles_empty_corpus() -> None:
 
     assert model.vocab_size == 4
     assert [entry.piece for entry in model.vocab] == ["<unk>", "<s>", "</s>", "<pad>"]
+    assert [entry.score for entry in model.vocab] == [-10.0, 0.0, 0.0, 0.0]

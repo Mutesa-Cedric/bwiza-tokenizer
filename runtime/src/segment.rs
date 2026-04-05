@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::errors::RuntimeError;
 use crate::model::{ModelV1, VocabEntry};
 use crate::trie::PieceTrie;
@@ -11,11 +9,71 @@ pub struct SegmentationResult {
     pub pieces: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-struct CandidatePath {
-    score: f64,
-    ids: Vec<usize>,
-    pieces: Vec<String>,
+fn entry_by_id<'a>(
+    entries_by_id: &'a [Option<&'a VocabEntry>],
+    token_id: usize,
+) -> Result<&'a VocabEntry, RuntimeError> {
+    entries_by_id
+        .get(token_id)
+        .and_then(|entry| *entry)
+        .ok_or(RuntimeError::UnknownTokenId(token_id))
+}
+
+fn is_better(
+    left_id: usize,
+    left_next: usize,
+    left_score: f64,
+    left_token_count: usize,
+    right_id: Option<usize>,
+    right_next: usize,
+    right_score: f64,
+    right_token_count: usize,
+    entries_by_id: &[Option<&VocabEntry>],
+    best_ids: &[Option<usize>],
+    best_next_offsets: &[usize],
+) -> Result<bool, RuntimeError> {
+    let Some(mut current_right_id) = right_id else {
+        return Ok(true);
+    };
+
+    if left_score != right_score {
+        return Ok(left_score > right_score);
+    }
+
+    if left_token_count != right_token_count {
+        return Ok(left_token_count < right_token_count);
+    }
+
+    let mut current_left_id = left_id;
+    let mut current_left_next = left_next;
+    let mut current_right_next = right_next;
+
+    loop {
+        if current_left_id != current_right_id {
+            let left_entry = entry_by_id(entries_by_id, current_left_id)?;
+            let right_entry = entry_by_id(entries_by_id, current_right_id)?;
+            let left_len = left_entry.piece.chars().count();
+            let right_len = right_entry.piece.chars().count();
+
+            if left_len != right_len {
+                return Ok(left_len > right_len);
+            }
+
+            return Ok(current_left_id < current_right_id);
+        }
+
+        let Some(next_left_id) = best_ids[current_left_next] else {
+            return Ok(false);
+        };
+        let Some(next_right_id) = best_ids[current_right_next] else {
+            return Ok(false);
+        };
+
+        current_left_id = next_left_id;
+        current_left_next = best_next_offsets[current_left_next];
+        current_right_id = next_right_id;
+        current_right_next = best_next_offsets[current_right_next];
+    }
 }
 
 pub fn segment_normalized(
@@ -23,156 +81,98 @@ pub fn segment_normalized(
     model: &ModelV1,
     trie: &PieceTrie,
 ) -> Result<SegmentationResult, RuntimeError> {
-    let entries_by_id: BTreeMap<usize, &VocabEntry> =
-        model.vocab.iter().map(|entry| (entry.id, entry)).collect();
+    let mut entries_by_id: Vec<Option<&VocabEntry>> = vec![None; model.vocab.len()];
+    for entry in &model.vocab {
+        entries_by_id[entry.id] = Some(entry);
+    }
+
     let unknown_id = model.special_token_ids.unk;
-    let unknown_entry = entries_by_id
-        .get(&unknown_id)
-        .ok_or_else(|| RuntimeError::Validation("model is missing the required <unk> entry".to_string()))?;
+    let unknown_entry = entry_by_id(&entries_by_id, unknown_id)?;
+    let text_length = normalized.len();
+    let mut best_scores = vec![f64::NEG_INFINITY; text_length + 1];
+    let mut best_token_counts = vec![0usize; text_length + 1];
+    let mut best_ids = vec![None; text_length + 1];
+    let mut best_next_offsets = vec![text_length; text_length + 1];
+    best_scores[text_length] = 0.0;
 
-    let mut memo: Vec<Option<CandidatePath>> = vec![None; normalized.len() + 1];
-
-    fn best_from(
-        offset: usize,
-        normalized: &str,
-        trie: &PieceTrie,
-        entries_by_id: &BTreeMap<usize, &VocabEntry>,
-        unknown_entry: &VocabEntry,
-        memo: &mut Vec<Option<CandidatePath>>,
-    ) -> Result<CandidatePath, RuntimeError> {
-        if let Some(result) = &memo[offset] {
-            return Ok(result.clone());
+    for offset in (0..text_length).rev() {
+        if !normalized.is_char_boundary(offset) {
+            continue;
         }
 
-        if offset >= normalized.len() {
-            let result = CandidatePath {
-                score: 0.0,
-                ids: Vec::new(),
-                pieces: Vec::new(),
-            };
-            memo[offset] = Some(result.clone());
-            return Ok(result);
-        }
-
+        let mut best_id = None;
+        let mut best_next_offset = text_length;
+        let mut best_score = f64::NEG_INFINITY;
+        let mut best_token_count = 0usize;
         let candidate_ids = trie.candidate_ids_at(normalized, offset);
-        let result = if candidate_ids.is_empty() {
+
+        if candidate_ids.is_empty() {
             let next_offset = normalized[offset..]
                 .chars()
                 .next()
                 .map(|ch| offset + ch.len_utf8())
                 .unwrap_or(offset);
-            let suffix = best_from(
-                next_offset,
-                normalized,
-                trie,
-                entries_by_id,
-                unknown_entry,
-                memo,
-            )?;
-
-            let mut ids = Vec::with_capacity(suffix.ids.len() + 1);
-            ids.push(unknown_entry.id);
-            ids.extend(suffix.ids.iter().copied());
-
-            let mut pieces = Vec::with_capacity(suffix.pieces.len() + 1);
-            pieces.push(unknown_entry.piece.clone());
-            pieces.extend(suffix.pieces.iter().cloned());
-
-            CandidatePath {
-                score: unknown_entry.score + suffix.score,
-                ids,
-                pieces,
-            }
+            best_id = Some(unknown_id);
+            best_next_offset = next_offset;
+            best_score = unknown_entry.score + best_scores[next_offset];
+            best_token_count = 1 + best_token_counts[next_offset];
         } else {
-            let mut best: Option<CandidatePath> = None;
-
             for token_id in candidate_ids {
-                let entry = entries_by_id
-                    .get(&token_id)
-                    .copied()
-                    .ok_or(RuntimeError::UnknownTokenId(token_id))?;
-                let suffix = best_from(
-                    offset + entry.piece.len(),
-                    normalized,
-                    trie,
-                    entries_by_id,
-                    unknown_entry,
-                    memo,
-                )?;
+                let entry = entry_by_id(&entries_by_id, token_id)?;
+                let next_offset = offset + entry.piece.len();
+                let candidate_score = entry.score + best_scores[next_offset];
+                let candidate_token_count = 1 + best_token_counts[next_offset];
 
-                let mut ids = Vec::with_capacity(suffix.ids.len() + 1);
-                ids.push(entry.id);
-                ids.extend(suffix.ids.iter().copied());
-
-                let mut pieces = Vec::with_capacity(suffix.pieces.len() + 1);
-                pieces.push(entry.piece.clone());
-                pieces.extend(suffix.pieces.iter().cloned());
-
-                let candidate = CandidatePath {
-                    score: entry.score + suffix.score,
-                    ids,
-                    pieces,
-                };
-
-                if best
-                    .as_ref()
-                    .map(|current| is_better(&candidate, current))
-                    .unwrap_or(true)
-                {
-                    best = Some(candidate);
+                if is_better(
+                    token_id,
+                    next_offset,
+                    candidate_score,
+                    candidate_token_count,
+                    best_id,
+                    best_next_offset,
+                    best_score,
+                    best_token_count,
+                    &entries_by_id,
+                    &best_ids,
+                    &best_next_offsets,
+                )? {
+                    best_id = Some(token_id);
+                    best_next_offset = next_offset;
+                    best_score = candidate_score;
+                    best_token_count = candidate_token_count;
                 }
             }
+        }
 
-            best.expect("candidate set was not empty")
-        };
-
-        memo[offset] = Some(result.clone());
-        Ok(result)
+        best_ids[offset] = best_id;
+        best_next_offsets[offset] = best_next_offset;
+        best_scores[offset] = best_score;
+        best_token_counts[offset] = best_token_count;
     }
 
-    let best = best_from(
-        0,
-        normalized,
-        trie,
-        &entries_by_id,
-        unknown_entry,
-        &mut memo,
-    )?;
+    let mut ids = Vec::new();
+    let mut pieces = Vec::new();
+    let mut offset = 0usize;
+
+    while offset < text_length {
+        let Some(token_id) = best_ids[offset] else {
+            break;
+        };
+        let entry = entry_by_id(&entries_by_id, token_id)?;
+        ids.push(token_id);
+        pieces.push(entry.piece.clone());
+        let next_offset = best_next_offsets[offset];
+        if next_offset <= offset {
+            return Err(RuntimeError::Validation(
+                "segmentation did not advance; trie is invalid".to_string(),
+            ));
+        }
+        offset = next_offset;
+    }
 
     Ok(SegmentationResult {
-        score: best.score,
-        ids: best.ids,
-        pieces: best.pieces,
+        score: best_scores[0],
+        ids,
+        pieces,
     })
-}
-
-fn is_better(left: &CandidatePath, right: &CandidatePath) -> bool {
-    if left.score != right.score {
-        return left.score > right.score;
-    }
-
-    if left.ids.len() != right.ids.len() {
-        return left.ids.len() < right.ids.len();
-    }
-
-    for ((left_id, left_piece), (right_id, right_piece)) in left
-        .ids
-        .iter()
-        .zip(left.pieces.iter())
-        .zip(right.ids.iter().zip(right.pieces.iter()))
-    {
-        if left_id == right_id {
-            continue;
-        }
-
-        let left_len = left_piece.chars().count();
-        let right_len = right_piece.chars().count();
-        if left_len != right_len {
-            return left_len > right_len;
-        }
-
-        return left_id < right_id;
-    }
-
-    false
 }

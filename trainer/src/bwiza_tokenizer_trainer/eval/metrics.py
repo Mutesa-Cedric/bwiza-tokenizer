@@ -4,43 +4,41 @@ from collections.abc import Iterable
 
 from ..normalize.pipeline import normalize_text
 from ..types import ModelV1
-from ..train.viterbi import build_model_index, segment_normalized
+from ..train.viterbi import build_model_index, iter_segment_ids
 
 
 def compute_metrics(
     docs: Iterable[str],
     model: ModelV1,
 ) -> dict[str, float]:
-    normalized_docs = [
-        normalized
-        for normalized in (normalize_text(doc, config=model.normalization) for doc in docs)
-        if normalized
-    ]
+    model_index = build_model_index(model)
+    unknown_id = model.special_token_ids["unk"]
+    total_chars = 0
+    total_tokens = 0
+    total_docs = 0
+    unknown_tokens = 0
+    used_ids: set[int] = set()
 
-    if not normalized_docs:
+    for doc in docs:
+        normalized = normalize_text(doc, config=model.normalization)
+        if not normalized:
+            continue
+
+        total_docs += 1
+        total_chars += len(normalized)
+
+        for token_id in iter_segment_ids(normalized, model, model_index):
+            total_tokens += 1
+            unknown_tokens += token_id == unknown_id
+            used_ids.add(token_id)
+
+    if total_docs == 0:
         return {
             "average_chars_per_token": 0.0,
             "average_tokens_per_document": 0.0,
             "unknown_rate": 0.0,
             "vocab_utilization": 0.0,
         }
-
-    model_index = build_model_index(model)
-    segmentations = [segment_normalized(doc, model, model_index) for doc in normalized_docs]
-    total_chars = sum(len(doc) for doc in normalized_docs)
-    total_tokens = sum(len(segmentation.ids) for segmentation in segmentations)
-    unknown_id = model.special_token_ids["unk"]
-    unknown_tokens = sum(
-        1
-        for segmentation in segmentations
-        for token_id in segmentation.ids
-        if token_id == unknown_id
-    )
-    used_ids = {
-        token_id
-        for segmentation in segmentations
-        for token_id in segmentation.ids
-    }
 
     if total_tokens == 0:
         average_chars_per_token = 0.0
@@ -51,7 +49,7 @@ def compute_metrics(
 
     return {
         "average_chars_per_token": average_chars_per_token,
-        "average_tokens_per_document": total_tokens / len(normalized_docs),
+        "average_tokens_per_document": total_tokens / total_docs,
         "unknown_rate": unknown_rate,
         "vocab_utilization": len(used_ids) / len(model.vocab),
     }
