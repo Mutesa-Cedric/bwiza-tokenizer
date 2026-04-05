@@ -4,6 +4,8 @@ from collections.abc import Iterable
 
 from ..normalize.pipeline import normalize_text
 from ..types import ModelV1
+from ..train.counts import count_piece_usage
+from ..train.native_runtime import count_piece_usage_native
 from ..train.viterbi import build_model_index, iter_segment_ids
 
 
@@ -11,34 +13,35 @@ def compute_metrics(
     docs: Iterable[str],
     model: ModelV1,
 ) -> dict[str, float]:
-    model_index = build_model_index(model)
-    unknown_id = model.special_token_ids["unk"]
-    total_chars = 0
-    total_tokens = 0
-    total_docs = 0
-    unknown_tokens = 0
-    used_ids: set[int] = set()
+    normalized_docs = [
+        normalized
+        for normalized in (normalize_text(doc, config=model.normalization) for doc in docs)
+        if normalized
+    ]
 
-    for doc in docs:
-        normalized = normalize_text(doc, config=model.normalization)
-        if not normalized:
-            continue
-
-        total_docs += 1
-        total_chars += len(normalized)
-
-        for token_id in iter_segment_ids(normalized, model, model_index):
-            total_tokens += 1
-            unknown_tokens += token_id == unknown_id
-            used_ids.add(token_id)
-
-    if total_docs == 0:
+    if not normalized_docs:
         return {
             "average_chars_per_token": 0.0,
             "average_tokens_per_document": 0.0,
             "unknown_rate": 0.0,
             "vocab_utilization": 0.0,
         }
+
+    unknown_id = model.special_token_ids["unk"]
+    total_chars = sum(len(normalized) for normalized in normalized_docs)
+    total_docs = len(normalized_docs)
+    usage_counts = count_piece_usage_native(normalized_docs, model)
+
+    if usage_counts is None:
+        model_index = build_model_index(model)
+        usage_counts = count_piece_usage(
+            iter_segment_ids(normalized, model, model_index)
+            for normalized in normalized_docs
+        )
+
+    total_tokens = sum(usage_counts.values())
+    unknown_tokens = usage_counts.get(unknown_id, 0)
+    used_ids = set(usage_counts)
 
     if total_tokens == 0:
         average_chars_per_token = 0.0

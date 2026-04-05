@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use bwiza_tokenizer_runtime::encode::{encode_ids, encode_pieces};
-use bwiza_tokenizer_runtime::model::{load_model_str, ModelV1};
+use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 use bwiza_tokenizer_runtime::trie::PieceTrie;
 use serde::Deserialize;
 
@@ -68,7 +68,10 @@ fn encodes_pieces_from_raw_text() {
     let trie = PieceTrie::from_model(&model);
 
     let pieces = encode_pieces("Muraho neza", &model, &trie).expect("encode should work");
-    assert_eq!(pieces, vec!["▁Mur".to_string(), "aho".to_string(), "▁neza".to_string()]);
+    assert_eq!(
+        pieces,
+        vec!["▁Mur".to_string(), "aho".to_string(), "▁neza".to_string()]
+    );
 }
 
 #[test]
@@ -82,8 +85,7 @@ fn encodes_ids_from_raw_text() {
 
 #[test]
 fn matches_committed_fixture_piece_and_id_outputs() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/golden/cases.v1.jsonl");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/cases.v1.jsonl");
     let raw = fs::read_to_string(path).expect("fixture file should exist");
     let model = parity_model();
     let trie = PieceTrie::from_model(&model);
@@ -94,7 +96,8 @@ fn matches_committed_fixture_piece_and_id_outputs() {
         }
 
         let case: FixtureCase = serde_json::from_str(line).expect("fixture line should parse");
-        let pieces = encode_pieces(case.input.as_str(), &model, &trie).expect("fixture should encode");
+        let pieces =
+            encode_pieces(case.input.as_str(), &model, &trie).expect("fixture should encode");
         let ids = encode_ids(case.input.as_str(), &model, &trie).expect("fixture should encode");
 
         assert_eq!(pieces, case.pieces);

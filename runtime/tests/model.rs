@@ -1,5 +1,5 @@
 use bwiza_tokenizer_runtime::errors::RuntimeError;
-use bwiza_tokenizer_runtime::model::{load_model_str, ModelV1};
+use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 
 fn valid_model_json() -> String {
     r#"{
@@ -39,7 +39,7 @@ fn valid_model_json() -> String {
     "target_vocab_size": 8
   }
 }"#
-        .to_string()
+    .to_string()
 }
 
 fn expect_validation_error(raw: &str) -> String {
@@ -60,9 +60,13 @@ fn loads_valid_model_v1() {
 
 #[test]
 fn rejects_wrong_version() {
-    let message = expect_validation_error(&valid_model_json().replace("\"model-v1\"", "\"model-v2\""));
+    let message =
+        expect_validation_error(&valid_model_json().replace("\"model-v1\"", "\"model-v2\""));
 
-    assert_eq!(message, "model version must be \"model-v1\", got \"model-v2\"");
+    assert_eq!(
+        message,
+        "model version must be \"model-v1\", got \"model-v2\""
+    );
 }
 
 #[test]
@@ -74,7 +78,9 @@ fn rejects_wrong_model_type() {
 
 #[test]
 fn rejects_vocab_size_mismatch() {
-    let message = expect_validation_error(&valid_model_json().replace("\"vocab_size\": 8", "\"vocab_size\": 7"));
+    let message = expect_validation_error(
+        &valid_model_json().replace("\"vocab_size\": 8", "\"vocab_size\": 7"),
+    );
 
     assert_eq!(message, "vocab_size must equal len(vocab), got 7 and 8");
 }
@@ -88,15 +94,16 @@ fn rejects_non_contiguous_ids() {
 
 #[test]
 fn rejects_duplicate_pieces() {
-    let message = expect_validation_error(&valid_model_json().replace("\"piece\": \".\"", "\"piece\": \"raho\""));
+    let message = expect_validation_error(
+        &valid_model_json().replace("\"piece\": \".\"", "\"piece\": \"raho\""),
+    );
 
     assert_eq!(message, "vocab pieces must be unique");
 }
 
 #[test]
 fn rejects_wrong_special_token_mapping() {
-    let message =
-        expect_validation_error(&valid_model_json().replace("\"unk\": 0", "\"unk\": 9"));
+    let message = expect_validation_error(&valid_model_json().replace("\"unk\": 0", "\"unk\": 9"));
 
     assert_eq!(message, "special_token_ids must match the fixed v1 mapping");
 }

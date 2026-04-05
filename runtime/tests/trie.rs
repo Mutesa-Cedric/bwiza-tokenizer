@@ -1,4 +1,4 @@
-use bwiza_tokenizer_runtime::model::{load_model_str, ModelV1};
+use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 use bwiza_tokenizer_runtime::trie::PieceTrie;
 
 fn parity_model() -> ModelV1 {

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use bwiza_tokenizer_runtime::decode::{decode_ids, decode_pieces};
 use bwiza_tokenizer_runtime::errors::RuntimeError;
-use bwiza_tokenizer_runtime::model::{load_model_str, ModelV1};
+use bwiza_tokenizer_runtime::model::{ModelV1, load_model_str};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -85,8 +85,7 @@ fn rejects_unknown_token_ids() {
 
 #[test]
 fn matches_committed_fixture_decoded_outputs() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/golden/cases.v1.jsonl");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/cases.v1.jsonl");
     let raw = fs::read_to_string(path).expect("fixture file should exist");
     let model = parity_model();
 

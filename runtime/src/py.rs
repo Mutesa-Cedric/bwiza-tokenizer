@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use pyo3::exceptions::{PyOSError, PyValueError};
@@ -7,8 +8,9 @@ use pyo3::types::PyModule;
 use crate::decode::{decode_ids, decode_pieces};
 use crate::encode::{encode_ids, encode_pieces};
 use crate::errors::RuntimeError;
-use crate::model::load_model;
+use crate::model::{load_model, load_model_str};
 use crate::normalize::normalize_text;
+use crate::segment::segment_normalized;
 use crate::trie::PieceTrie;
 
 #[pyclass(name = "Tokenizer")]
@@ -20,6 +22,12 @@ pub struct PyTokenizer {
 impl PyTokenizer {
     fn from_path(path: impl AsRef<Path>) -> Result<Self, RuntimeError> {
         let model = load_model(path)?;
+        let trie = PieceTrie::from_model(&model);
+        Ok(Self { model, trie })
+    }
+
+    fn from_json_str(model_json: &str) -> Result<Self, RuntimeError> {
+        let model = load_model_str(model_json)?;
         let trie = PieceTrie::from_model(&model);
         Ok(Self { model, trie })
     }
@@ -36,11 +44,93 @@ fn to_py_err(error: RuntimeError) -> PyErr {
     }
 }
 
+fn count_piece_usage_dense(
+    texts: Vec<String>,
+    model: &crate::model::ModelV1,
+    trie: &PieceTrie,
+) -> Result<Vec<usize>, RuntimeError> {
+    let mut counts = vec![0usize; model.vocab.len()];
+
+    for normalized in texts {
+        let segmentation = segment_normalized(normalized.as_str(), model, trie)?;
+        for token_id in segmentation.ids {
+            counts[token_id] += 1;
+        }
+    }
+
+    Ok(counts)
+}
+
+fn enumerate_seed_candidates(
+    texts: Vec<String>,
+    max_piece_chars: usize,
+    min_candidate_freq: usize,
+    seed_candidate_limit: usize,
+) -> Vec<(String, usize, bool)> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut protected_pieces: BTreeSet<String> = BTreeSet::new();
+
+    for normalized in texts {
+        if normalized.is_empty() {
+            continue;
+        }
+
+        for character in normalized.chars() {
+            protected_pieces.insert(character.to_string());
+        }
+
+        let mut char_offsets = normalized
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        char_offsets.push(normalized.len());
+        let char_count = char_offsets.len().saturating_sub(1);
+
+        for start_index in 0..char_count {
+            let max_end_index = usize::min(char_count, start_index + max_piece_chars);
+            if start_index >= max_end_index {
+                continue;
+            }
+
+            for end_index in (start_index + 1)..=max_end_index {
+                let piece =
+                    normalized[char_offsets[start_index]..char_offsets[end_index]].to_string();
+                *counts.entry(piece).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut protected_candidates = protected_pieces
+        .iter()
+        .map(|piece| (piece.clone(), counts.get(piece).copied().unwrap_or(0), true))
+        .collect::<Vec<_>>();
+
+    let remaining_slots = seed_candidate_limit.saturating_sub(protected_candidates.len());
+    if remaining_slots == 0 {
+        return protected_candidates;
+    }
+
+    let mut ranked_candidates = counts
+        .into_iter()
+        .filter(|(piece, count)| !protected_pieces.contains(piece) && *count >= min_candidate_freq)
+        .map(|(piece, count)| (piece, count, false))
+        .collect::<Vec<_>>();
+    ranked_candidates
+        .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    protected_candidates.extend(ranked_candidates.into_iter().take(remaining_slots));
+    protected_candidates
+}
+
 #[pymethods]
 impl PyTokenizer {
     #[new]
     fn new(model_path: &str) -> PyResult<Self> {
         Self::from_path(model_path).map_err(to_py_err)
+    }
+
+    #[staticmethod]
+    fn from_json(model_json: &str) -> PyResult<Self> {
+        Self::from_json_str(model_json).map_err(to_py_err)
     }
 
     fn normalize(&self, text: &str) -> String {
@@ -53,6 +143,28 @@ impl PyTokenizer {
 
     fn encode_pieces(&self, text: &str) -> PyResult<Vec<String>> {
         encode_pieces(text, &self.model, &self.trie).map_err(to_py_err)
+    }
+
+    fn encode_normalized(&self, normalized: &str) -> PyResult<Vec<usize>> {
+        let segmentation =
+            segment_normalized(normalized, &self.model, &self.trie).map_err(to_py_err)?;
+        Ok(segmentation.ids)
+    }
+
+    fn count_piece_usage_normalized(&self, texts: Vec<String>) -> PyResult<BTreeMap<usize, usize>> {
+        let dense_counts =
+            count_piece_usage_dense(texts, &self.model, &self.trie).map_err(to_py_err)?;
+        let mut counts: BTreeMap<usize, usize> = BTreeMap::new();
+        for (token_id, count) in dense_counts.into_iter().enumerate() {
+            if count > 0 {
+                counts.insert(token_id, count);
+            }
+        }
+        Ok(counts)
+    }
+
+    fn count_piece_usage_normalized_dense(&self, texts: Vec<String>) -> PyResult<Vec<usize>> {
+        count_piece_usage_dense(texts, &self.model, &self.trie).map_err(to_py_err)
     }
 
     fn decode(&self, ids: Vec<usize>) -> PyResult<String> {
@@ -70,10 +182,26 @@ fn load_tokenizer(model_path: &str) -> PyResult<PyTokenizer> {
     PyTokenizer::from_path(model_path).map_err(to_py_err)
 }
 
+#[pyfunction]
+fn enumerate_seed_candidates_normalized(
+    texts: Vec<String>,
+    max_piece_chars: usize,
+    min_candidate_freq: usize,
+    seed_candidate_limit: usize,
+) -> Vec<(String, usize, bool)> {
+    enumerate_seed_candidates(
+        texts,
+        max_piece_chars,
+        min_candidate_freq,
+        seed_candidate_limit,
+    )
+}
+
 #[pymodule]
 pub fn bwiza_tokenizer_runtime(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTokenizer>()?;
     m.add_function(wrap_pyfunction!(load_tokenizer, m)?)?;
+    m.add_function(wrap_pyfunction!(enumerate_seed_candidates_normalized, m)?)?;
     Ok(())
 }
 
@@ -150,24 +278,37 @@ mod tests {
             let tokenizer_type = module.getattr("Tokenizer")?;
             let tokenizer = tokenizer_type.call1((path.to_string_lossy().as_ref(),))?;
 
-            let normalized: String = tokenizer.call_method1("normalize", ("Muraho neza",))?.extract()?;
+            let normalized: String = tokenizer
+                .call_method1("normalize", ("Muraho neza",))?
+                .extract()?;
             assert_eq!(normalized, "▁Muraho▁neza");
 
-            let ids: Vec<usize> = tokenizer.call_method1("encode", ("Muraho neza",))?.extract()?;
+            let ids: Vec<usize> = tokenizer
+                .call_method1("encode", ("Muraho neza",))?
+                .extract()?;
             assert_eq!(ids, vec![7, 8, 9]);
 
             let pieces: Vec<String> = tokenizer
                 .call_method1("encode_pieces", ("Muraho neza",))?
                 .extract()?;
-            assert_eq!(pieces, vec!["▁Mur".to_string(), "aho".to_string(), "▁neza".to_string()]);
+            assert_eq!(
+                pieces,
+                vec!["▁Mur".to_string(), "aho".to_string(), "▁neza".to_string()]
+            );
 
-            let decoded: String = tokenizer.call_method1("decode", (vec![7usize, 8, 9],))?.extract()?;
+            let decoded: String = tokenizer
+                .call_method1("decode", (vec![7usize, 8, 9],))?
+                .extract()?;
             assert_eq!(decoded, "Muraho neza");
 
             let decoded_pieces: String = tokenizer
                 .call_method1(
                     "decode_pieces",
-                    (vec!["▁Mur".to_string(), "aho".to_string(), "▁neza".to_string()],),
+                    (vec![
+                        "▁Mur".to_string(),
+                        "aho".to_string(),
+                        "▁neza".to_string(),
+                    ],),
                 )?
                 .extract()?;
             assert_eq!(decoded_pieces, "Muraho neza");
@@ -195,5 +336,63 @@ mod tests {
             Ok(())
         })
         .expect("loader function should return a working tokenizer");
+    }
+
+    #[test]
+    fn python_module_exposes_json_loader_and_normalized_counting() {
+        Python::with_gil(|py| -> PyResult<()> {
+            let module = PyModule::new(py, "bwiza_tokenizer_runtime")?;
+            super::bwiza_tokenizer_runtime(&module)?;
+
+            let tokenizer_type = module.getattr("Tokenizer")?;
+            let tokenizer = tokenizer_type.call_method1("from_json", (model_json(),))?;
+
+            let ids: Vec<usize> = tokenizer
+                .call_method1("encode_normalized", ("▁Muraho▁neza",))?
+                .extract()?;
+            assert_eq!(ids, vec![7, 8, 9]);
+
+            let counts: std::collections::BTreeMap<usize, usize> = tokenizer
+                .call_method1(
+                    "count_piece_usage_normalized",
+                    (vec!["▁Muraho".to_string(), "▁Muraho▁neza".to_string()],),
+                )?
+                .extract()?;
+            assert_eq!(counts.get(&7), Some(&2));
+            assert_eq!(counts.get(&8), Some(&2));
+            assert_eq!(counts.get(&9), Some(&1));
+
+            let dense_counts: Vec<usize> = tokenizer
+                .call_method1(
+                    "count_piece_usage_normalized_dense",
+                    (vec!["▁Muraho".to_string(), "▁Muraho▁neza".to_string()],),
+                )?
+                .extract()?;
+            assert_eq!(dense_counts[7], 2);
+            assert_eq!(dense_counts[8], 2);
+            assert_eq!(dense_counts[9], 1);
+
+            let candidates: Vec<(String, usize, bool)> = module
+                .getattr("enumerate_seed_candidates_normalized")?
+                .call1((
+                    vec!["aba".to_string(), "aba".to_string()],
+                    2usize,
+                    1usize,
+                    4usize,
+                ))?
+                .extract()?;
+            assert_eq!(
+                candidates,
+                vec![
+                    ("a".to_string(), 4, true),
+                    ("b".to_string(), 2, true),
+                    ("ab".to_string(), 2, false),
+                    ("ba".to_string(), 2, false),
+                ]
+            );
+
+            Ok(())
+        })
+        .expect("json loader and normalized counting should behave like the reference API");
     }
 }

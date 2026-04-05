@@ -10,6 +10,7 @@ from ..normalize.pipeline import normalize_text
 from ..types import ModelV1, NormalizationConfig, VocabEntry
 from .candidates import SeedCandidate, enumerate_seed_candidates
 from .counts import count_piece_usage
+from .native_runtime import count_piece_usage_native, enumerate_seed_candidates_native
 from .prune import is_protected_piece, prune_vocabulary
 from .viterbi import build_model_index, iter_segment_ids
 
@@ -166,7 +167,9 @@ def train_from_iterator(
         if normalized
     ]
 
-    seed_candidates = enumerate_seed_candidates(normalized_docs, config)
+    seed_candidates = enumerate_seed_candidates_native(normalized_docs, config)
+    if seed_candidates is None:
+        seed_candidates = enumerate_seed_candidates(normalized_docs, config)
     vocab = _special_entries() + _score_seed_candidates(seed_candidates)
 
     if len(vocab) == len(SPECIAL_TOKEN_ROWS):
@@ -192,12 +195,13 @@ def train_from_iterator(
             vocab=current_vocab,
             trainer=asdict(config),
         )
-        model_index = build_model_index(working_model)
-
-        usage_counts = count_piece_usage(
-            iter_segment_ids(doc, working_model, model_index)
-            for doc in normalized_docs
-        )
+        usage_counts = count_piece_usage_native(normalized_docs, working_model)
+        if usage_counts is None:
+            model_index = build_model_index(working_model)
+            usage_counts = count_piece_usage(
+                iter_segment_ids(doc, working_model, model_index)
+                for doc in normalized_docs
+            )
         rescored_vocab = _recompute_scores(current_vocab, usage_counts)
         pruned_vocab = prune_vocabulary(
             rescored_vocab,

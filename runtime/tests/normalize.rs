@@ -38,8 +38,7 @@ fn empty_or_whitespace_only_input_becomes_empty() {
 
 #[test]
 fn matches_committed_fixture_normalized_outputs() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/golden/cases.v1.jsonl");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/cases.v1.jsonl");
     let raw = fs::read_to_string(path).expect("fixture file should exist");
 
     for line in raw.lines() {
