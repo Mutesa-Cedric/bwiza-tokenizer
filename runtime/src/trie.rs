@@ -68,15 +68,17 @@ impl PieceTrie {
         self.nodes[node_index].terminal_ids.push(token_id);
     }
 
-    pub fn candidate_ids_at(&self, text: &str, offset: usize) -> Vec<usize> {
+    pub fn for_each_candidate_id_at<F>(&self, text: &str, offset: usize, mut visit: F)
+    where
+        F: FnMut(usize),
+    {
         if !text.is_char_boundary(offset) {
-            return Vec::new();
+            return;
         }
 
         let bytes = text.as_bytes();
         let mut node_index = 0;
         let mut index = offset;
-        let mut matches = Vec::new();
 
         while index < bytes.len() {
             let byte = bytes[index];
@@ -86,9 +88,16 @@ impl PieceTrie {
 
             node_index = next_index;
             index += 1;
-            matches.extend(self.nodes[node_index].terminal_ids.iter().copied());
-        }
 
+            for token_id in &self.nodes[node_index].terminal_ids {
+                visit(*token_id);
+            }
+        }
+    }
+
+    pub fn candidate_ids_at(&self, text: &str, offset: usize) -> Vec<usize> {
+        let mut matches = Vec::new();
+        self.for_each_candidate_id_at(text, offset, |token_id| matches.push(token_id));
         matches
     }
 

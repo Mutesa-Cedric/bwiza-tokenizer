@@ -1,16 +1,19 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
+use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::decode::{decode_ids, decode_pieces};
 use crate::encode::{encode_ids, encode_pieces};
 use crate::errors::RuntimeError;
 use crate::model::{load_model, load_model_str};
 use crate::normalize::normalize_text;
-use crate::segment::segment_normalized;
+use crate::segment::{count_segmented_ids_normalized, segment_normalized};
 use crate::trie::PieceTrie;
 
 #[pyclass(name = "Tokenizer")]
@@ -49,16 +52,40 @@ fn count_piece_usage_dense(
     model: &crate::model::ModelV1,
     trie: &PieceTrie,
 ) -> Result<Vec<usize>, RuntimeError> {
-    let mut counts = vec![0usize; model.vocab.len()];
-
-    for normalized in texts {
-        let segmentation = segment_normalized(normalized.as_str(), model, trie)?;
-        for token_id in segmentation.ids {
-            counts[token_id] += 1;
-        }
+    let mut piece_scores = vec![0.0; model.vocab.len()];
+    let mut piece_byte_lengths = vec![0usize; model.vocab.len()];
+    let mut piece_surface_lengths = vec![0usize; model.vocab.len()];
+    for entry in &model.vocab {
+        piece_scores[entry.id] = entry.score;
+        piece_byte_lengths[entry.id] = entry.piece.len();
+        piece_surface_lengths[entry.id] = entry.piece.chars().count();
     }
+    let vocab_len = model.vocab.len();
 
-    Ok(counts)
+    texts
+        .into_par_iter()
+        .map(|normalized| {
+            let mut counts = vec![0usize; vocab_len];
+            count_segmented_ids_normalized(
+                normalized.as_str(),
+                model,
+                trie,
+                piece_scores.as_slice(),
+                piece_byte_lengths.as_slice(),
+                piece_surface_lengths.as_slice(),
+                counts.as_mut_slice(),
+            )?;
+            Ok::<Vec<usize>, RuntimeError>(counts)
+        })
+        .try_reduce(
+            || vec![0usize; vocab_len],
+            |mut left, right| {
+                for (left_count, right_count) in left.iter_mut().zip(right) {
+                    *left_count += right_count;
+                }
+                Ok(left)
+            },
+        )
 }
 
 fn enumerate_seed_candidates(
@@ -67,16 +94,20 @@ fn enumerate_seed_candidates(
     min_candidate_freq: usize,
     seed_candidate_limit: usize,
 ) -> Vec<(String, usize, bool)> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    let mut protected_pieces: BTreeSet<String> = BTreeSet::new();
+    fn best_candidate_order(left: &(&str, usize), right: &(&str, usize)) -> Ordering {
+        right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0))
+    }
 
-    for normalized in texts {
+    fn worst_candidate_order(left: &(&str, usize), right: &(&str, usize)) -> Ordering {
+        left.1.cmp(&right.1).then_with(|| right.0.cmp(left.0))
+    }
+
+    let mut counts: FxHashMap<&str, usize> = FxHashMap::default();
+    let mut protected_pieces: FxHashSet<&str> = FxHashSet::default();
+
+    for normalized in &texts {
         if normalized.is_empty() {
             continue;
-        }
-
-        for character in normalized.chars() {
-            protected_pieces.insert(character.to_string());
         }
 
         let mut char_offsets = normalized
@@ -86,6 +117,10 @@ fn enumerate_seed_candidates(
         char_offsets.push(normalized.len());
         let char_count = char_offsets.len().saturating_sub(1);
 
+        for index in 0..char_count {
+            protected_pieces.insert(&normalized[char_offsets[index]..char_offsets[index + 1]]);
+        }
+
         for start_index in 0..char_count {
             let max_end_index = usize::min(char_count, start_index + max_piece_chars);
             if start_index >= max_end_index {
@@ -93,16 +128,23 @@ fn enumerate_seed_candidates(
             }
 
             for end_index in (start_index + 1)..=max_end_index {
-                let piece =
-                    normalized[char_offsets[start_index]..char_offsets[end_index]].to_string();
+                let piece = &normalized[char_offsets[start_index]..char_offsets[end_index]];
                 *counts.entry(piece).or_insert(0) += 1;
             }
         }
     }
 
-    let mut protected_candidates = protected_pieces
-        .iter()
-        .map(|piece| (piece.clone(), counts.get(piece).copied().unwrap_or(0), true))
+    let mut protected_surfaces = protected_pieces.iter().copied().collect::<Vec<_>>();
+    protected_surfaces.sort_unstable();
+    let mut protected_candidates = protected_surfaces
+        .into_iter()
+        .map(|piece| {
+            (
+                piece.to_string(),
+                counts.get(piece).copied().unwrap_or(0),
+                true,
+            )
+        })
         .collect::<Vec<_>>();
 
     let remaining_slots = seed_candidate_limit.saturating_sub(protected_candidates.len());
@@ -113,11 +155,19 @@ fn enumerate_seed_candidates(
     let mut ranked_candidates = counts
         .into_iter()
         .filter(|(piece, count)| !protected_pieces.contains(piece) && *count >= min_candidate_freq)
-        .map(|(piece, count)| (piece, count, false))
         .collect::<Vec<_>>();
-    ranked_candidates
-        .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    protected_candidates.extend(ranked_candidates.into_iter().take(remaining_slots));
+    if ranked_candidates.len() > remaining_slots {
+        let split_index = ranked_candidates.len() - remaining_slots;
+        ranked_candidates.select_nth_unstable_by(split_index, worst_candidate_order);
+        ranked_candidates = ranked_candidates.split_off(split_index);
+    }
+    ranked_candidates.sort_by(best_candidate_order);
+    protected_candidates.extend(
+        ranked_candidates
+            .into_iter()
+            .take(remaining_slots)
+            .map(|(piece, count)| (piece.to_string(), count, false)),
+    );
     protected_candidates
 }
 
@@ -151,9 +201,14 @@ impl PyTokenizer {
         Ok(segmentation.ids)
     }
 
-    fn count_piece_usage_normalized(&self, texts: Vec<String>) -> PyResult<BTreeMap<usize, usize>> {
-        let dense_counts =
-            count_piece_usage_dense(texts, &self.model, &self.trie).map_err(to_py_err)?;
+    fn count_piece_usage_normalized(
+        &self,
+        py: Python<'_>,
+        texts: Vec<String>,
+    ) -> PyResult<BTreeMap<usize, usize>> {
+        let dense_counts = py
+            .allow_threads(|| count_piece_usage_dense(texts, &self.model, &self.trie))
+            .map_err(to_py_err)?;
         let mut counts: BTreeMap<usize, usize> = BTreeMap::new();
         for (token_id, count) in dense_counts.into_iter().enumerate() {
             if count > 0 {
@@ -163,8 +218,13 @@ impl PyTokenizer {
         Ok(counts)
     }
 
-    fn count_piece_usage_normalized_dense(&self, texts: Vec<String>) -> PyResult<Vec<usize>> {
-        count_piece_usage_dense(texts, &self.model, &self.trie).map_err(to_py_err)
+    fn count_piece_usage_normalized_dense(
+        &self,
+        py: Python<'_>,
+        texts: Vec<String>,
+    ) -> PyResult<Vec<usize>> {
+        py.allow_threads(|| count_piece_usage_dense(texts, &self.model, &self.trie))
+            .map_err(to_py_err)
     }
 
     fn decode(&self, ids: Vec<usize>) -> PyResult<String> {
@@ -184,17 +244,20 @@ fn load_tokenizer(model_path: &str) -> PyResult<PyTokenizer> {
 
 #[pyfunction]
 fn enumerate_seed_candidates_normalized(
+    py: Python<'_>,
     texts: Vec<String>,
     max_piece_chars: usize,
     min_candidate_freq: usize,
     seed_candidate_limit: usize,
 ) -> Vec<(String, usize, bool)> {
-    enumerate_seed_candidates(
-        texts,
-        max_piece_chars,
-        min_candidate_freq,
-        seed_candidate_limit,
-    )
+    py.allow_threads(|| {
+        enumerate_seed_candidates(
+            texts,
+            max_piece_chars,
+            min_candidate_freq,
+            seed_candidate_limit,
+        )
+    })
 }
 
 #[pymodule]

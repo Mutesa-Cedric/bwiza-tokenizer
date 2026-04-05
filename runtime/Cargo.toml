@@ -16,3 +16,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 unicode-normalization = "0.1"
 pyo3 = { version = "0.24", features = ["auto-initialize"], optional = true }
+rayon = "1.10"
+rustc-hash = "2.1"
