@@ -116,3 +116,11 @@ def test_segment_normalized_rejects_non_string_input() -> None:
         assert str(exc) == "segment_normalized expects a normalized string"
     else:
         raise AssertionError("segment_normalized should reject non-string input")
+
+
+def test_segment_normalized_handles_long_unknown_runs() -> None:
+    result = segment_normalized("x" * 5000, unknown_model())
+
+    assert len(result.ids) == 5000
+    assert result.ids[:4] == (0, 0, 0, 0)
+    assert result.pieces[:4] == ("<unk>", "<unk>", "<unk>", "<unk>")

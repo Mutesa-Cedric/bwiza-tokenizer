@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from ..normalize.pipeline import normalize_text
 from ..types import ModelV1
-from ..train.viterbi import segment_normalized
+from ..train.viterbi import build_model_index, segment_normalized
 
 
 def compute_metrics(
@@ -25,7 +25,8 @@ def compute_metrics(
             "vocab_utilization": 0.0,
         }
 
-    segmentations = [segment_normalized(doc, model) for doc in normalized_docs]
+    model_index = build_model_index(model)
+    segmentations = [segment_normalized(doc, model, model_index) for doc in normalized_docs]
     total_chars = sum(len(doc) for doc in normalized_docs)
     total_tokens = sum(len(segmentation.ids) for segmentation in segmentations)
     unknown_id = model.special_token_ids["unk"]

@@ -11,7 +11,7 @@ from ..types import ModelV1, NormalizationConfig, VocabEntry
 from .candidates import SeedCandidate, enumerate_seed_candidates
 from .counts import count_piece_usage
 from .prune import is_protected_piece, prune_vocabulary
-from .viterbi import segment_normalized
+from .viterbi import build_model_index, segment_normalized
 
 SPECIAL_TOKEN_ROWS: tuple[tuple[str, str, float], ...] = (
     ("unk", "<unk>", 0.0),
@@ -190,8 +190,9 @@ def train_from_iterator(
             vocab=current_vocab,
             trainer=asdict(config),
         )
+        model_index = build_model_index(working_model)
 
-        segmentations = [segment_normalized(doc, working_model) for doc in normalized_docs]
+        segmentations = [segment_normalized(doc, working_model, model_index) for doc in normalized_docs]
         usage_counts = count_piece_usage(segmentations)
         rescored_vocab = _recompute_scores(current_vocab, usage_counts)
         pruned_vocab = prune_vocabulary(

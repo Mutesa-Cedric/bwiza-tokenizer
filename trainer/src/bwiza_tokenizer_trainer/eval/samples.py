@@ -6,7 +6,7 @@ from typing import Any
 from ..normalize.pipeline import normalize_text
 from ..reference_runtime.decode import decode_pieces
 from ..types import ModelV1
-from ..train.viterbi import segment_normalized
+from ..train.viterbi import build_model_index, segment_normalized
 
 
 def sample_segmentations(
@@ -15,13 +15,14 @@ def sample_segmentations(
     limit: int = 8,
 ) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
+    model_index = build_model_index(model)
 
     for doc in docs:
         normalized = normalize_text(doc, config=model.normalization)
         if not normalized:
             continue
 
-        segmentation = segment_normalized(normalized, model)
+        segmentation = segment_normalized(normalized, model, model_index)
         samples.append(
             {
                 "input": doc,
